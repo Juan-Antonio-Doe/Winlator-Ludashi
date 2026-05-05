@@ -2,6 +2,7 @@ package com.winlator.cmod.xserver;
 
 import androidx.collection.ArrayMap;
 
+import java.util.ArrayList;
 import java.util.Map;
 
 public abstract class DesktopHelper {
@@ -40,7 +41,16 @@ public abstract class DesktopHelper {
         if (window.isApplicationWindow()) {
             boolean parentIsRoot = window.getParent() == xServer.windowManager.rootWindow;
             xServer.windowManager.setFocus(window, parentIsRoot ? WindowManager.FocusRevertTo.POINTER_ROOT : WindowManager.FocusRevertTo.PARENT);
-            xServer.getWinHandler().bringToFront(window.getClassName(), window.getHandle());
+
+            // Extended with logic from Brunodev85's updated DesktopHelper implementation (LGPL-2.1).
+            if (window.isSurface()) {
+                ArrayList<Window> dialogWindows = xServer.windowManager.findDialogWindows(window.id);
+                if (!dialogWindows.isEmpty()) {
+                    for (Window dialogWindow : dialogWindows) xServer.getWinHandler().bringToFront(dialogWindow.getClassName(), dialogWindow.getHandle());
+                }
+                else
+                    xServer.getWinHandler().bringToFront(window.getClassName(), window.getHandle());
+            }
         }
     }
 

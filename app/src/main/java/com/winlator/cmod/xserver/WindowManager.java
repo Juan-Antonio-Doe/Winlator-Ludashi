@@ -59,6 +59,16 @@ public class WindowManager extends XResourceManager {
         return windows.get(id);
     }
 
+    // Ported from Brunodev85's updated codebase (LGPL-2.1).
+    public ArrayList<Window> findDialogWindows(int id) {
+        ArrayList<Window> result = new ArrayList<>();
+        for (int i = 0; i < windows.size(); i++) {
+            Window window = windows.valueAt(i);
+            if (window != null && window.getTransientFor() == id && window.isDialogBox()) result.add(window);
+        }
+        return result;
+    }
+
     public Window findWindowWithProcessId(int processId) {
         for (int i = 0; i < windows.size(); i++) {
             Window window = windows.valueAt(i);
