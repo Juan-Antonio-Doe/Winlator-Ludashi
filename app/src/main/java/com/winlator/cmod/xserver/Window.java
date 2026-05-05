@@ -22,6 +22,7 @@ public class Window extends XResource {
     public enum StackMode {ABOVE, BELOW, TOP_IF, BOTTOM_IF, OPPOSITE}
     public enum MapState {UNMAPPED, UNVIEWABLE, VIEWABLE}
     public enum WMHints {FLAGS, INPUT, INITIAL_STATE, ICON_PIXMAP, ICON_WINDOW, ICON_X, ICON_Y, ICON_MASK, WINDOW_GROUP}
+    public enum Type {NORMAL, DIALOG}
     private Drawable content;
     private short x;
     private short y;
@@ -166,9 +167,54 @@ public class Window extends XResource {
         return property != null ? property.getInt(0) : 0;
     }
 
+    // Ported from Bruno's updated codebase (LGPL-2.1).
+    // Adjusted to match this fork's architecture.
+    public int getTransientFor() {
+        Property property = getProperty(Atom.getId("WM_TRANSIENT_FOR"));
+        return property != null ? property.getInt(0) : 0;
+    }
+
     public boolean isWoW64() {
         Property property = getProperty(Atom.getId("_NET_WM_WOW64"));
         return property != null && property.data.get(0) == 1;
+    }
+
+    // Ported from Bruno's updated codebase (LGPL-2.1).
+    // Adjusted to match this fork's architecture.
+    public boolean isSurface() {
+        Property property = getProperty(Atom.getId("_NET_WM_SURFACE"));
+        return property != null && property.data.get(0) == 1;
+    }
+
+    // Ported from Bruno's updated codebase (LGPL-2.1).
+    // Adjusted to match this fork's architecture.
+    public boolean isDialogBox() {
+        return getType() == Type.DIALOG && getTransientFor() > 0 && hasDecoration(Decoration.TITLE) && !(hasDecoration(Decoration.MINIMIZE) && hasDecoration(Decoration.MAXIMIZE));
+    }
+
+    // Ported from Bruno's updated codebase (LGPL-2.1).
+    // Adjusted to match this fork's architecture.
+    public Bitmask getDecorations() {
+        Property property = getProperty(Atom.getId("_MOTIF_WM_HINTS"));
+        return new Bitmask(property != null ? property.getInt(2) : 0);
+    }
+
+    // Ported from Bruno's updated codebase (LGPL-2.1).
+    // This method is used in the collectRenderableWindows() method in GLRenderer.java in the new codebase.
+    public boolean hasNoDecorations() {
+        return getDecorations().isEmpty();
+    }
+
+    // Ported from Bruno's updated codebase (LGPL-2.1).
+    public boolean hasDecoration(Decoration decoration) {
+        return getDecorations().isSet(decoration.flag());
+    }
+
+    // Ported from Bruno's updated codebase (LGPL-2.1).
+    // Adjusted to match this fork's architecture.
+    public Type getType() {
+        Property property = getProperty(Atom.getId("_NET_WM_WINDOW_TYPE"));
+        return property != null && property.toString().equals("_NET_WM_WINDOW_TYPE_DIALOG") ? Type.DIALOG : Type.NORMAL;
     }
 
     public long getHandle() {
