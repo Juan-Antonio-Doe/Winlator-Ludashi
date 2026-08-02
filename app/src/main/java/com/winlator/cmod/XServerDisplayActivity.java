@@ -250,6 +250,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         AppUtils.keepScreenOn(this);
 
         setContentView(R.layout.xserver_display_activity);
+        NotificationService.setContainerActive(true);
 
         preloaderDialog = new PreloaderDialog(this);
         preferences = PreferenceManager.getDefaultSharedPreferences(this);
@@ -740,17 +741,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
         if (!isInPictureInPictureMode() && isSuspendEnabled)
         	ProcessHelper.resumeAllWineProcesses();
-            
-        if (NotificationService.wakeLock != null && NotificationService.wakeLock.isHeld())  
-            NotificationService.wakeLock.release();
     }
 
     @Override
     public void onPause() {
         super.onPause();
-        
-        if (NotificationService.wakeLock != null && !NotificationService.wakeLock.isHeld())
-            NotificationService.wakeLock.acquire();
             
         boolean gyroEnabled = preferences.getBoolean("gyro_enabled", true);
 
@@ -835,10 +830,12 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 AppUtils.restartApplication(getApplicationContext());
             }
         }, 1000);
+        NotificationService.setContainerActive(false);
     }
 
     @Override
     protected void onDestroy() {
+        NotificationService.setContainerActive(false);
         super.onDestroy();
     }
 
