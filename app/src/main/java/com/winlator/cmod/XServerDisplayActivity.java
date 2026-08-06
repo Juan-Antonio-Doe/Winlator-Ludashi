@@ -740,7 +740,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         handler.postDelayed(savePlaytimeRunnable, SAVE_INTERVAL_MS);
 
         if (!isInPictureInPictureMode() && isSuspendEnabled)
-        	ProcessHelper.resumeAllWineProcesses();
+            new Thread(ProcessHelper::resumeAllWineProcesses, "WineProcessResumer").start();
     }
 
     @Override
@@ -761,12 +761,18 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 environment.onPause();
                 xServerView.onPause();
             }
-            
-            if (isSuspendEnabled)
-                ProcessHelper.pauseAllWineProcesses();
+
+            if (isSuspendEnabled) {
+                // Priority: save data first, then suspend
+                new Thread(() -> {
+                    savePlaytimeData();
+                    ProcessHelper.pauseAllWineProcesses();
+                }, "WineProcessPauser").start();
+            } else {
+                new Thread(this::savePlaytimeData, "SavePlayTime").start();
+            }
         }
 
-        savePlaytimeData();
         handler.removeCallbacks(savePlaytimeRunnable);
     }
 

@@ -10,9 +10,12 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 
 import android.os.PowerManager;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -24,6 +27,7 @@ import com.winlator.cmod.R;
 import com.winlator.cmod.MainActivity;
 
 public class NotificationService extends Service {
+	private static String TAG = "NotificationService";
     private static boolean isRunning = false;
 	private static boolean isContainerActive = false;
 	private BroadcastReceiver screenStateReceiver;
@@ -37,6 +41,9 @@ public class NotificationService extends Service {
 	public static void setContainerActive(boolean isActive) {
 		isContainerActive = isActive;
 	}
+
+	private HandlerThread screenReceiverThread;
+	private Handler screenReceiverHandler;
     
 	@Override
 	public void onCreate() {
@@ -47,6 +54,14 @@ public class NotificationService extends Service {
 		wakeLock.setReferenceCounted(false);
 
 		prefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+
+		// Dispatch onReceive() on a dedicated background Looper instead of the main
+		// thread, so a synchronous WakeLock Binder call to a contended system_server
+		// can never delay the broadcast past the ANR timeout. Also serializes
+		// SCREEN_OFF / USER_PRESENT handling in arrival order.
+		screenReceiverThread = new HandlerThread("NotificationService-ScreenReceiver");
+		screenReceiverThread.start();
+		screenReceiverHandler = new Handler(screenReceiverThread.getLooper());
 
 		// Screen-lock detection.
 		screenStateReceiver = new BroadcastReceiver() {
@@ -66,7 +81,7 @@ public class NotificationService extends Service {
 		IntentFilter screenFilter = new IntentFilter();
 		screenFilter.addAction(Intent.ACTION_SCREEN_OFF);
 		screenFilter.addAction(Intent.ACTION_USER_PRESENT);
-		registerReceiver(screenStateReceiver, screenFilter);
+		registerReceiver(screenStateReceiver, screenFilter, null, screenReceiverHandler);
 	}
 
 	@Override
@@ -112,6 +127,7 @@ public class NotificationService extends Service {
 			try { unregisterReceiver(screenStateReceiver); } catch (Exception ignored) {}
 			screenStateReceiver = null;
 		}
+		if (screenReceiverThread != null) screenReceiverThread.quitSafely();
     }
 
 	@Nullable
@@ -123,8 +139,13 @@ public class NotificationService extends Service {
 	private void acquireWakeLock() {
         if (!isContainerActive || wakeLock == null || prefs == null) return;
         if (!prefs.getBoolean(PREF_USE_WAKELOCK, false)) return;
-		if (!wakeLock.isHeld()) {
-			wakeLock.acquire();
+		try {
+			if (!wakeLock.isHeld()) {
+				wakeLock.acquire();
+			}
+		} catch (Exception e) {
+			Log.e(TAG, "Failed to acquire wake lock", e);
 		}
+
 	}
 }
