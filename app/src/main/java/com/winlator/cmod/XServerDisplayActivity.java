@@ -1,5 +1,6 @@
 package com.winlator.cmod;
 
+import com.winlator.cmod.contentdialog.DisplayXConfigDialog;
 import static com.winlator.cmod.core.AppUtils.showToast;
 
 import android.Manifest;
@@ -157,6 +158,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     private WinHandler winHandler;
     private WineRequestHandler wineRequestHandler;
     private float globalCursorSpeed = 1.0f;
+    private float refreshRate = 60.0f;
     private MagnifierView magnifierView;
     private DebugDialog debugDialog;
     private short taskAffinityMask = 0;
@@ -243,6 +245,14 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     }
 
 
+    public void setRefreshRate(float refreshRate) {
+        this.refreshRate = refreshRate;
+    }
+
+    public float getRefreshRate() {
+        return this.refreshRate;
+    }
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -258,8 +268,13 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         if (preferences.getBoolean("high_refresh_rate_mode", false)) {
             android.view.WindowManager.LayoutParams params = getWindow().getAttributes();
             params.preferredRefreshRate = pickHighestRefreshRate();
+            this.refreshRate = params.preferredRefreshRate;
             getWindow().setAttributes(params);
-        }    
+        }
+	    else {
+            android.view.Display display = getWindowManager().getDefaultDisplay();
+            refreshRate = display.getRefreshRate();
+	    }
 
         cursorLock = preferences.getBoolean("cursor_lock", true);
 
@@ -511,7 +526,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         xServer.windowManager.addOnWindowModificationListener(new WindowManager.OnWindowModificationListener() {
             @Override
             public void onUpdateWindowContentDirect(Window window, Drawable drawable) {
-                if (frameRatingWindowId == window.id) frameRating.update();
+                updateFrameRating(window);
             }
             
             @Override
@@ -522,7 +537,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                     winStarted[0] = true;
                 }
                     
-                if (frameRatingWindowId == window.id) frameRating.update();
+                updateFrameRating(window);
             }
            
             @Override
@@ -731,9 +746,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             sensorManager.registerListener(gyroListener, gyroSensor, SensorManager.SENSOR_DELAY_GAME);
         }
 
+        if (!isInPictureInPictureMode())
+            xServerView.onResume();
+
         if (environment != null) {
             environment.onResume();
-            xServerView.onResume();
         }
         
         startTime = System.currentTimeMillis();
@@ -759,8 +776,9 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             // Only pause environment and xServerView if not in PiP mode
             if (environment != null) {
                 environment.onPause();
-                xServerView.onPause();
             }
+
+            xServerView.onPause();
 
             if (isSuspendEnabled) {
                 // Priority: save data first, then suspend
@@ -1196,7 +1214,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
 
         if (container != null && container.isShowFPS()) {
-            frameRating = new FrameRating(this, graphicsDriverConfig);
+            frameRating = new FrameRating(this, graphicsDriverConfig, displayDriver);
             frameRating.setVisibility(View.GONE);
             rootView.addView(frameRating);
         }
@@ -1937,12 +1955,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 Log.d("XServerDisplayActivity", "Showing hud for Window " + window.getName());
                 frameRating.update();
             }
-            if (property.nameAsString().contains("_MESA_DRV_ENGINE_NAME")) {
-                runOnUiThread(() -> frameRating.setRenderer(property.toString()));
-            }
-            if (property.nameAsString().contains("_MESA_DRV_GPU_NAME")) {
-                runOnUiThread(() -> frameRating.setGpuName(property.toString()));
-            }
         }
         else if (frameRatingWindowId != -1) {
             frameRatingWindowId = -1;
@@ -1958,6 +1970,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
     public void setScreenEffectProfile(String screenEffectProfile) {
         this.screenEffectProfile = screenEffectProfile;
+    }
+
+    public void updateFrameRating(Window window) {
+        if (frameRatingWindowId != window.id) return;
+        frameRating.update();
     }
 
 }
