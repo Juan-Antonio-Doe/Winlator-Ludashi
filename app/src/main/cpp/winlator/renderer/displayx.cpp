@@ -378,8 +378,15 @@ void DisplayX::eventThreadLoop() {
             eventQueue.pop();
         }
         
+        lock.unlock();
+        
         if (func) {
             func();
+            {
+                auto l = presentLock.lock();
+                eventsPending--;
+            }
+            presentLock.notify();
         }
     }
 }
@@ -393,7 +400,7 @@ int64_t DisplayX::getCurrentTimeNanos() {
 
 void DisplayX::onCommitCallback(void *context, ASurfaceTransactionStats *stats) {
     auto *self = reinterpret_cast<DisplayX *>(context);
-    if (!self->isPerformanceHintAPIAvailable())
+    if (!self->isPerformanceHintAPIAvailable() || !self->performanceHintSession || !self->performanceHintManager)
         return;
     
     if (self->previousReportedWorkTime == 0) {
@@ -424,7 +431,6 @@ void DisplayX::presentThreadLoop() {
     auto lastPresentRequestTimeNanos = 0;
     
     if (isPerformanceHintAPIAvailable()) {
-        auto lock = presentLock.lock();
         performanceHintManager = pfnAPerformanceHintGetManager();
         float targetFloat = this->perfMode ? xServer->refreshRate * 100.0f : xServer->refreshRate;
         int64_t targetWorkDuration = static_cast<int64_t>(1000000000.0f / targetFloat);
@@ -439,7 +445,7 @@ void DisplayX::presentThreadLoop() {
         auto lock = presentLock.lock();
         
         presentLock.wait(lock, [&]{ 
-            return stopped || (eventQueue.empty() && !presentRequests.empty() && hasSurface && surfaceChanged && !paused);
+            return stopped || (eventsPending == 0 && !presentRequests.empty() && hasSurface && surfaceChanged && !paused);
         });
         
         if (stopped)
@@ -462,7 +468,7 @@ void DisplayX::presentThreadLoop() {
         }
         else {
             pfnASurfaceTransactionSetBuffer(presentTransaction, window->control, drawable->ahb, presentRequest->sync_fence);
-            pfnASurfaceTransactionSetOnCommit(presentTransaction, this, DisplayX::onCommitCallback);
+            if (pfnASurfaceTransactionSetOnCommit) pfnASurfaceTransactionSetOnCommit(presentTransaction, this, DisplayX::onCommitCallback);
             if (drawable->isDisplayX) {
                 auto *ptr = presentRequest.release();
                 pfnASurfaceTransactionSetOnComplete(presentTransaction, ptr, DisplayX::onCompleteCallback);
@@ -563,6 +569,10 @@ void DisplayX::destroySurface() {
 
 void DisplayX::queueEvent(std::function<void()> func) {
     auto lock = eventLock.lock();
+    {
+        auto l = presentLock.lock();
+        eventsPending++;
+    }
     eventQueue.push(func);
     eventLock.notify();
 }
@@ -595,6 +605,7 @@ void DisplayX::createWindowControl(Window *window) {
     if (pfnASurfaceControlAcquire)    
         pfnASurfaceControlAcquire(window->control);
     
+    pfnASurfaceTransactionSetEnableBackPressure(windowTransaction, window->control, false);
     pfnASurfaceTransactionSetVisibility(windowTransaction, window->control, ASURFACE_TRANSACTION_VISIBILITY_HIDE);
     
     if (pfnASurfaceTransactionSetPosition) {
@@ -912,13 +923,4 @@ void DisplayX::toggleFullscreen() {
 
 void DisplayX::setPerformanceMode(bool perfMode) {
     this->perfMode = perfMode;
-    if (isPerformanceHintAPIAvailable()) {
-        auto lock = presentLock.lock();
-        float targetFloat = this->perfMode ? xServer->refreshRate * 100.0f : xServer->refreshRate;
-        int64_t targetWorkDuration = static_cast<int64_t>(1000000000.0f / targetFloat);
-    
-        int tid = gettid();
-        std::vector<int32_t> tids{tid};
-        pfnAPerformanceHintUpdateTargetWorkDuration(performanceHintSession, targetWorkDuration);
-    }
 }
