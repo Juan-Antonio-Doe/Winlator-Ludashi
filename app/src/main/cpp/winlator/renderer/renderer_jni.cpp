@@ -38,6 +38,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeInit(JNIEnv *env, jobject thiz, 
     rootWindow->height = env->CallShortMethod(rootWindowObj, cache.windowGetHeight);
     rootWindow->x = env->CallShortMethod(rootWindowObj, cache.windowGetX);
     rootWindow->y = env->CallShortMethod(rootWindowObj, cache.windowGetY);
+    rootWindow->z_order = -1;
     rootWindow->className = "";
     
     auto drawable = std::make_unique<struct Drawable>();
@@ -112,7 +113,6 @@ Java_com_winlator_cmod_widget_XServerView_nativeInit(JNIEnv *env, jobject thiz, 
     desc.layers = 1;
     desc.usage = AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN |
                  AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN |
-                 AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY |
                  AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
                  
     ret = AHardwareBuffer_allocate(&desc, &cursorDrawable->ahb);
@@ -183,6 +183,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeCreateWindow(JNIEnv *env, jobjec
     window->height = env->CallShortMethod(windowObj, cache.windowGetHeight);
     window->x = env->CallShortMethod(windowObj, cache.windowGetX);
     window->y = env->CallShortMethod(windowObj, cache.windowGetY);
+    window->z_order = 100;
     window->className = "";
     
     bool isInputOutput = env->CallBooleanMethod(windowObj, cache.windowIsInputOutput);
@@ -377,6 +378,9 @@ Java_com_winlator_cmod_widget_XServerView_nativeChangeWindowZOrder(JNIEnv *env, 
     if (!xserver.isDisplayX()) {
         renderer.queueEvent([]{ renderer.updateScene(); });
         renderer.requestRenderer();
+    }
+    else {
+        displayX.queueEvent([window, sibling, stackMode] { displayX.changeZOrder(window, sibling, stackMode);});
     }
 }
 
