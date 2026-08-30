@@ -59,21 +59,25 @@ class DisplayX {
         class PresentQueue {
             private:
                 std::queue<std::unique_ptr<PresentRequest>> mQueue;
+                std::unordered_set<Window *> mSet;
 
             public:
                 void push(std::unique_ptr<PresentRequest> request) {
-                    if (!request)
+                    if (!request || !request->window || mSet.count(request->window))
                         return;
-
+                    
+                    mSet.insert(request->window);     
                     mQueue.push(std::move(request));
                 }
 
                 std::unique_ptr<PresentRequest> pop() {
                     if (mQueue.empty())
                         return nullptr;
-
+                    
                     auto val = std::move(mQueue.front());
                     mQueue.pop();
+                    
+                    mSet.erase(val->window);
                     return val;
                 }
 
