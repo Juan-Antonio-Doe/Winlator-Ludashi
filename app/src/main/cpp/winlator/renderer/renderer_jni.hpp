@@ -14,6 +14,9 @@
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
+
 #define HAL_PIXEL_FORMAT_BGRA_8888 5
 
 #define LOAD_METHOD_ID(method, env, cls, name, sig) \

@@ -15,6 +15,7 @@
 #include "renderer_jni.hpp"
 #include "view_transformation.hpp"
 #include "window.hpp"
+#include "effect_composer.hpp"
 #include "cursor.hpp"
 
 class DisplayX {
@@ -149,6 +150,7 @@ class DisplayX {
         CursorManager *cursorManager;
         JNIXServer *xServer;
         JNICache *cache;
+        EffectComposer *effectComposer;
         
         bool cursorVisible = false;
         
