@@ -15,6 +15,7 @@
 #include "renderer_jni.hpp"
 #include "view_transformation.hpp"
 #include "window.hpp"
+#include "effect_composer.hpp"
 #include "cursor.hpp"
 
 class DisplayX {
@@ -58,27 +59,25 @@ class DisplayX {
         class PresentQueue {
             private:
                 std::queue<std::unique_ptr<PresentRequest>> mQueue;
-                std::unordered_set<PresentRequest*> mSet;
+                std::unordered_set<Window *> mSet;
 
             public:
                 void push(std::unique_ptr<PresentRequest> request) {
-                    if (!request)
+                    if (!request || !request->window || mSet.count(request->window))
                         return;
-
-                    PresentRequest* ptr = request.get();
-
-                    if (mSet.insert(ptr).second) {
-                        mQueue.push(std::move(request));
-                    }
+                    
+                    mSet.insert(request->window);     
+                    mQueue.push(std::move(request));
                 }
 
                 std::unique_ptr<PresentRequest> pop() {
                     if (mQueue.empty())
                         return nullptr;
-
+                    
                     auto val = std::move(mQueue.front());
                     mQueue.pop();
-                    mSet.erase(val.get());
+                    
+                    mSet.erase(val->window);
                     return val;
                 }
 
@@ -126,6 +125,7 @@ class DisplayX {
         std::atomic_bool cursorUpdate{false};
         std::atomic_bool surfaceChanged{false};
         std::atomic_bool perfMode{true};
+        std::atomic_bool presentRR{true};
         
         bool requestUpdate = false;
         
@@ -154,6 +154,7 @@ class DisplayX {
         CursorManager *cursorManager;
         JNIXServer *xServer;
         JNICache *cache;
+        EffectComposer *effectComposer;
         
         bool cursorVisible = false;
         
@@ -166,7 +167,7 @@ class DisplayX {
         void resume();
         
         void queueEvent(std::function<void()> func);
-        void requestWindowUpdate(Drawable *drawable, Window *window);
+        void requestWindowUpdate(Window *window);
         void requestCursorUpdate();
         void updateCursorPosition();
         
@@ -177,8 +178,9 @@ class DisplayX {
         void changeGeometry(Window *window, bool resized);
         void changeZOrder(Window *window, Window *sibling, int stackMode);
         void reparentWindow(Window *window, Window *parent);
-        void updateCursor(Window *window);
-        void drawRootCursor();
+        void updateCursor(Cursor *cursor);
+        void showCursor();
         void toggleFullscreen();
         void setPerformanceMode(bool perfMode);
+        void setPresentRR(bool presentRR);
 };

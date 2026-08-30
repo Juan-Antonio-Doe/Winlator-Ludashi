@@ -1,6 +1,8 @@
 package com.winlator.cmod.services;
 
 import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.BroadcastReceiver;
@@ -9,6 +11,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -19,12 +22,14 @@ import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.ServiceCompat;
 
 import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
 
 import com.winlator.cmod.R;
 import com.winlator.cmod.MainActivity;
+import com.winlator.cmod.core.ProcessHelper;
 
 public class NotificationService extends Service {
 	private static String TAG = "NotificationService";
@@ -34,7 +39,19 @@ public class NotificationService extends Service {
     public static PowerManager.WakeLock wakeLock = null;
 	private static volatile SharedPreferences prefs;
 	private static final String PREF_USE_WAKELOCK = "enable_background_wakelock";
-    
+
+    public static void acquireLock() {
+        if (wakeLock == null || (wakeLock != null && wakeLock.isHeld())) return;
+
+        wakeLock.acquire();
+    }
+
+    public static void releaseLock() {
+        if (wakeLock == null || (wakeLock != null && !wakeLock.isHeld())) return;
+
+        wakeLock.release();
+    }
+
     public static boolean isRunning() {
         return isRunning;
     }
@@ -44,7 +61,7 @@ public class NotificationService extends Service {
 
 	private HandlerThread screenReceiverThread;
 	private Handler screenReceiverHandler;
-    
+
 	@Override
 	public void onCreate() {
 		super.onCreate();
@@ -69,7 +86,7 @@ public class NotificationService extends Service {
 			public void onReceive(Context context, Intent intent) {
 				String action = intent.getAction();
 				if (Intent.ACTION_SCREEN_OFF.equals(action)) {
-					acquireWakeLock();
+                    acquireLock();
 				} else if (Intent.ACTION_USER_PRESENT.equals(action)) {
 					if (wakeLock != null && wakeLock.isHeld()) {
 						wakeLock.release();
@@ -85,22 +102,17 @@ public class NotificationService extends Service {
 	}
 
 	@Override
-	public int onStartCommand(Intent intent, int flags, int startId) {	
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-        
+	public int onStartCommand(Intent intent, int flags, int startId) {
 		PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
 		NotificationCompat.Builder builder = new NotificationCompat.Builder(this, MainActivity.NOTIFICATION_CHANNEL_ID)
 			.setSmallIcon(R.drawable.ic_stat_ab_gear_0011)
 			.setContentTitle("Winlator")
 			.setContentText("Winlator is running, do not kill or swipe this notification")
 			.setPriority(NotificationCompat.PRIORITY_LOW)
-		 	.setContentIntent(pendingIntent)
-		 	.setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-		 	.setOngoing(true);
-		 
+        	.setContentIntent(pendingIntent)
+		    .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+		    .setOngoing(true);
+
 		Notification notification = builder.build();
 		startForeground(MainActivity.NOTIFICATION_ID, notification);
         
@@ -113,16 +125,16 @@ public class NotificationService extends Service {
 	public void onTaskRemoved(Intent rootIntent) {
 		stopForeground(STOP_FOREGROUND_REMOVE);
 		stopSelf();
+        releaseLock();
+        ProcessHelper.killAllWineProcesses();
         isRunning = false;
-        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
-		android.os.Process.killProcess(android.os.Process.myPid());
 	}
     
     @Override
     public void onDestroy() {
         super.onDestroy();
+        releaseLock();
         isRunning = false;
-        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
 		if (screenStateReceiver != null) {
 			try { unregisterReceiver(screenStateReceiver); } catch (Exception ignored) {}
 			screenStateReceiver = null;
@@ -134,18 +146,5 @@ public class NotificationService extends Service {
 	@Override
 	public IBinder onBind(Intent intent) {
 		return null;
-	}
-
-	private void acquireWakeLock() {
-        if (!isContainerActive || wakeLock == null || prefs == null) return;
-        if (!prefs.getBoolean(PREF_USE_WAKELOCK, false)) return;
-		try {
-			if (!wakeLock.isHeld()) {
-				wakeLock.acquire();
-			}
-		} catch (Exception e) {
-			Log.e(TAG, "Failed to acquire wake lock", e);
-		}
-
 	}
 }
