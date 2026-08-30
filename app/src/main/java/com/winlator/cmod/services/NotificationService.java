@@ -1,8 +1,6 @@
 package com.winlator.cmod.services;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.BroadcastReceiver;
@@ -10,21 +8,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.content.pm.ServiceInfo;
-import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 
 import android.os.PowerManager;
-import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
-import androidx.core.app.ServiceCompat;
 
-import androidx.core.content.ContextCompat;
 import androidx.preference.PreferenceManager;
 
 import com.winlator.cmod.R;
@@ -32,7 +24,6 @@ import com.winlator.cmod.MainActivity;
 import com.winlator.cmod.core.ProcessHelper;
 
 public class NotificationService extends Service {
-	private static String TAG = "NotificationService";
     private static boolean isRunning = false;
 	private static boolean isContainerActive = false;
 	private BroadcastReceiver screenStateReceiver;
@@ -41,6 +32,8 @@ public class NotificationService extends Service {
 	private static final String PREF_USE_WAKELOCK = "enable_background_wakelock";
 
     public static void acquireLock() {
+		if (!isContainerActive || wakeLock == null || prefs == null) return;
+		if (!prefs.getBoolean(PREF_USE_WAKELOCK, false)) return;
         if (wakeLock == null || (wakeLock != null && wakeLock.isHeld())) return;
 
         wakeLock.acquire();
