@@ -81,9 +81,7 @@ public class NotificationService extends Service {
 				if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                     acquireLock();
 				} else if (Intent.ACTION_USER_PRESENT.equals(action)) {
-					if (wakeLock != null && wakeLock.isHeld()) {
-						wakeLock.release();
-					}
+					releaseLock();
 				}
 			}
 		};
