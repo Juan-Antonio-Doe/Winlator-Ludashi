@@ -127,17 +127,20 @@ class DisplayX {
         std::atomic_bool perfMode{true};
         std::atomic_bool presentRR{true};
         std::atomic_bool backPressure{false};
+        std::atomic_bool precisePresentation{false};
         
         bool requestUpdate = false;
         
         bool fullscreen = false;
         int eventsPending = 0;
         int64_t previousReportedWorkTime = 0;
+        AVsyncId vsyncId = -1;
         
         void eventThreadLoop();
         void networkThreadLoop();
         void presentThreadLoop();
         static void onFrameCallback64(int64_t frameTimeNanos, void *data);
+        static void onVsyncCallback(const AChoreographerFrameCallbackData* callbackData, void* data);
         static void onCommitCallback(void *context, ASurfaceTransactionStats *stats);
         static void onCompleteCallback(void *context, ASurfaceTransactionStats *stats);
         int64_t getCurrentTimeNanos();
@@ -185,4 +188,5 @@ class DisplayX {
         void setPerformanceMode(bool perfMode);
         void setPresentRR(bool presentRR);
         void setBackPressure(bool backPressure);
+        void setPrecisePresentation(bool precisePresentation);
 };

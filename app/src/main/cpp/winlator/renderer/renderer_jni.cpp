@@ -173,6 +173,7 @@ Java_com_winlator_cmod_widget_XServerView_nativeInit(JNIEnv *env, jobject thiz, 
     displayX.setPerformanceMode(env->GetBooleanField(context, cache.performanceMode));
     displayX.setPresentRR(env->GetBooleanField(context, cache.presentRR));
     displayX.setBackPressure(env->GetBooleanField(context, cache.backPressure));
+    displayX.setPrecisePresentation(env->GetBooleanField(context, cache.precisePresentation));
     
     if (xserver.isDisplayX())
         displayX.start();

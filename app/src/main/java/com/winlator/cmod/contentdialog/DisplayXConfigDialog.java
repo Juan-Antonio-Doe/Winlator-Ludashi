@@ -11,7 +11,7 @@ import com.winlator.cmod.core.AppUtils;
 import com.winlator.cmod.core.KeyValueSet;
 
 public class DisplayXConfigDialog extends ContentDialog {
-    public static String DEFAULT_CONFIG = "trueDisplayX=0" + ",performanceMode=1" + ",surfaceFormat=rgba8" + ",presentRR=1" + ",backPressure=0";
+    public static String DEFAULT_CONFIG = "trueDisplayX=0" + ",performanceMode=1" + ",surfaceFormat=rgba8" + ",presentRR=1" + ",backPressure=0" + ",precisePresentation=0";
     private Context context;
     
     public DisplayXConfigDialog(View anchor) {
@@ -24,6 +24,7 @@ public class DisplayXConfigDialog extends ContentDialog {
         final CheckBox cbEnablePerfMode = findViewById(R.id.CBEnablePerfMode);
         final CheckBox cbSyncRR = findViewById(R.id.CBPresentRR);
         final CheckBox cbEnableBackPressure = findViewById(R.id.CBEnableBackPressure);
+        final CheckBox cbPrecisePresentation = findViewById(R.id.CBPrecisePresentation);
         final Spinner sSurfaceFormat = findViewById(R.id.SSurfaceFormat);
         
         String tag = anchor.getTag().toString();
@@ -33,6 +34,7 @@ public class DisplayXConfigDialog extends ContentDialog {
         cbEnablePerfMode.setChecked(config.get("performanceMode").equals("1") ? true : false);
         cbSyncRR.setChecked(config.get("presentRR").equals("1") ? true : false);
         cbEnableBackPressure.setChecked(config.get("backPressure").equals("1") ? true : false);
+        cbPrecisePresentation.setChecked(config.get("precisePresentation").equals("1") ? true : false);
         AppUtils.setSpinnerSelectionFromIdentifier(sSurfaceFormat, config.get("surfaceFormat"));
         
         setOnConfirmCallback(() -> {
@@ -40,6 +42,7 @@ public class DisplayXConfigDialog extends ContentDialog {
             config.put("performanceMode", cbEnablePerfMode.isChecked() ? "1" : "0");
             config.put("presentRR", cbSyncRR.isChecked() ? "1" : "0");
             config.put("backPressure", cbEnableBackPressure.isChecked() ? "1" : "0");
+            config.put("precisePresentation", cbPrecisePresentation.isChecked() ? "1" : "0");
             config.put("surfaceFormat", sSurfaceFormat.getSelectedItem().toString());
             anchor.setTag(config.toString());
         });
