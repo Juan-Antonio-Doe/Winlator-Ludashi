@@ -63,8 +63,15 @@ class DisplayX {
 
             public:
                 void push(std::unique_ptr<PresentRequest> request) {
-                    if (!request || !request->window || mSet.count(request->window))
+                    if (!request || !request->window)
                         return;
+                        
+                    if (mSet.count(request->window)) {
+                        if (request->sync_fence >= 0)
+                            close(request->sync_fence);
+                            
+                        return;
+                    }        
                     
                     mSet.insert(request->window);     
                     mQueue.push(std::move(request));
