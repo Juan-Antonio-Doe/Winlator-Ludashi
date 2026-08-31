@@ -208,6 +208,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     
     public boolean performanceMode;
     public boolean presentRR;
+    public boolean backPressure;
      
     @Override
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
@@ -512,6 +513,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             this.displayxConfig = DisplayXConfigDialog.parseConfig(displayxConfig);
             this.performanceMode = this.displayxConfig.get("performanceMode").equals("1") ? true : false;
             this.presentRR = this.displayxConfig.get("presentRR").equals("1") ? true : false;
+            this.backPressure = this.displayxConfig.get("backPressure").equals("1") ? true : false;
         }
 
         this.graphicsDriverConfig = GraphicsDriverConfigDialog.parseGraphicsDriverConfig(graphicsDriverConfig);

@@ -126,6 +126,7 @@ class DisplayX {
         std::atomic_bool surfaceChanged{false};
         std::atomic_bool perfMode{true};
         std::atomic_bool presentRR{true};
+        std::atomic_bool backPressure{false};
         
         bool requestUpdate = false;
         
@@ -183,4 +184,5 @@ class DisplayX {
         void toggleFullscreen();
         void setPerformanceMode(bool perfMode);
         void setPresentRR(bool presentRR);
+        void setBackPressure(bool backPressure);
 };

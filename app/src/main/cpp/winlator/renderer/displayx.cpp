@@ -504,6 +504,10 @@ void DisplayX::presentThreadLoop() {
                    completeContext->requests.push_back(std::move(presentRequest));
                    env->CallVoidMethod(xServer->xserverDisplayActivity, cache->updateFrameRating, window->windowObj);
                 }    
+                if (!window->backPressureEnabled && pfnASurfaceTransactionSetEnableBackPressure && backPressure)  {
+                    pfnASurfaceTransactionSetEnableBackPressure(presentTransaction, window->control, true);
+                    window->backPressureEnabled = true;
+                }
             }
         }
         
@@ -638,7 +642,6 @@ void DisplayX::createWindowControl(Window *window) {
     if (pfnASurfaceControlAcquire)    
         pfnASurfaceControlAcquire(window->control);
     
-    pfnASurfaceTransactionSetEnableBackPressure(windowTransaction, window->control, false);
     pfnASurfaceTransactionSetZOrder(windowTransaction, window->control, window->z_order);
     pfnASurfaceTransactionSetVisibility(windowTransaction, window->control, ASURFACE_TRANSACTION_VISIBILITY_HIDE);
     
@@ -959,4 +962,8 @@ void DisplayX::setPerformanceMode(bool perfMode) {
 
 void DisplayX::setPresentRR(bool presentRR) {
     this->presentRR = presentRR;
+}
+
+void DisplayX::setBackPressure(bool backPressure) {
+    this->backPressure = backPressure;
 }
