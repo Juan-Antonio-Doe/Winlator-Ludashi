@@ -17,6 +17,7 @@ struct ComposerTexture {
     VkImage srcImage;
     VkImageView srcImageView;
     VkDeviceMemory srcMemory;
+    VkSampler srcSampler;
     AHardwareBuffer *dstBuffer;
     VkImage dstImage;
     VkImageView dstImageView;

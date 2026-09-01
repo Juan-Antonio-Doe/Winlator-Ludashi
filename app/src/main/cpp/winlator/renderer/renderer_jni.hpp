@@ -94,7 +94,9 @@ class JNICache {
         jclass xserverDisplayActivityClass;
         jmethodID updateFrameRating;
         jfieldID performanceMode;
+        jfieldID backPressure;
         jfieldID presentRR;
+        jfieldID precisePresentation;
         
         JNICache() {}
         
@@ -165,6 +167,8 @@ class JNICache {
             LOAD_METHOD_ID(getRefreshRate, env, xserverDisplayActivityClass, "getRefreshRate", "()F");
             LOAD_FIELD_ID(performanceMode, env, xserverDisplayActivityClass, "performanceMode", "Z");
             LOAD_FIELD_ID(presentRR, env, xserverDisplayActivityClass, "presentRR", "Z");
+            LOAD_FIELD_ID(backPressure, env, xserverDisplayActivityClass, "backPressure", "Z");
+            LOAD_FIELD_ID(precisePresentation, env, xserverDisplayActivityClass, "precisePresentation", "Z");
             
             this->xserverClass = (jclass)env->NewGlobalRef(xServerClass);
             this->windowClass = (jclass)env->NewGlobalRef(windowClass);

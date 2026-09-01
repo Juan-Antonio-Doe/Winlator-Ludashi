@@ -245,7 +245,7 @@ VkResult EffectComposer::createPipelines() {
     VkDescriptorSetLayoutBinding bindings[] = {
         {
             .binding = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .descriptorCount = 1,
             .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
             .pImmutableSamplers = nullptr
@@ -390,7 +390,7 @@ VkResult EffectComposer::createComposerTexture(Drawable *drawable) {
     srcImageCreateInfo.arrayLayers = 1;
     srcImageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     srcImageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    srcImageCreateInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT;
+    srcImageCreateInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
     srcImageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     srcImageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -427,10 +427,16 @@ VkResult EffectComposer::createComposerTexture(Drawable *drawable) {
     VkImportAndroidHardwareBufferInfoANDROID srcImportAHB{};
     srcImportAHB.sType = VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID;
     srcImportAHB.buffer = drawable->ahb;
+    
+    VkMemoryDedicatedAllocateInfo srcDedicatedInfo{};
+    srcDedicatedInfo.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+    srcDedicatedInfo.pNext = &srcImportAHB;
+    srcDedicatedInfo.image = drawable->composerTexture->srcImage;
+    srcDedicatedInfo.buffer = nullptr;
 
     VkMemoryAllocateInfo srcAllocateInfo{};
     srcAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    srcAllocateInfo.pNext = &srcImportAHB;
+    srcAllocateInfo.pNext = &srcDedicatedInfo;
     srcAllocateInfo.allocationSize = srcAHBProps.allocationSize;
     srcAllocateInfo.memoryTypeIndex = pick_memory_index(physicalDevice, srcAHBProps.memoryTypeBits);
 
@@ -449,10 +455,16 @@ VkResult EffectComposer::createComposerTexture(Drawable *drawable) {
     VkImportAndroidHardwareBufferInfoANDROID dstImportAHB{};
     dstImportAHB.sType = VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID;
     dstImportAHB.buffer = drawable->composerTexture->dstBuffer;
+    
+    VkMemoryDedicatedAllocateInfo dstDedicatedInfo{};
+    dstDedicatedInfo.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+    dstDedicatedInfo.pNext = &dstImportAHB;
+    dstDedicatedInfo.image = drawable->composerTexture->dstImage;
+    dstDedicatedInfo.buffer = nullptr;
 
     VkMemoryAllocateInfo dstAllocateInfo{};
     dstAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    dstAllocateInfo.pNext = &dstImportAHB;
+    dstAllocateInfo.pNext = &dstDedicatedInfo;
     dstAllocateInfo.allocationSize = dstAHBProps.allocationSize;
     dstAllocateInfo.memoryTypeIndex = pick_memory_index(physicalDevice, dstAHBProps.memoryTypeBits);
 
@@ -524,8 +536,28 @@ VkResult EffectComposer::createComposerTexture(Drawable *drawable) {
         printf("Failed to allocate descriptor sets, result %d\n", result);
         return result;
     }
-
+    
+    VkSamplerCreateInfo srcSamplerCreateInfo{};
+    srcSamplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    srcSamplerCreateInfo.pNext = nullptr;
+    srcSamplerCreateInfo.flags = 0;
+    srcSamplerCreateInfo.magFilter = VK_FILTER_NEAREST;
+    srcSamplerCreateInfo.minFilter = VK_FILTER_NEAREST;
+    srcSamplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    srcSamplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    srcSamplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    srcSamplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    srcSamplerCreateInfo.mipLodBias = 0.0f;
+    srcSamplerCreateInfo.anisotropyEnable = VK_FALSE;
+    srcSamplerCreateInfo.compareEnable = VK_FALSE;
+    srcSamplerCreateInfo.minLod = 0.0f;
+    srcSamplerCreateInfo.maxLod = 0.0f;
+    srcSamplerCreateInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    srcSamplerCreateInfo.unnormalizedCoordinates = VK_TRUE;
+    
+    vkCreateSampler(device, &srcSamplerCreateInfo, nullptr, &drawable->composerTexture->srcSampler);
     VkDescriptorImageInfo srcImageInfo{};
+    srcImageInfo.sampler = drawable->composerTexture->srcSampler;
     srcImageInfo.imageView = drawable->composerTexture->srcImageView;
     srcImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
@@ -539,7 +571,7 @@ VkResult EffectComposer::createComposerTexture(Drawable *drawable) {
     descWrites[0].dstSet = drawable->composerTexture->vkDescriptorSet;
     descWrites[0].dstBinding = 0;
     descWrites[0].descriptorCount = 1;
-    descWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    descWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descWrites[0].pImageInfo = &srcImageInfo;
 
     descWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -578,6 +610,7 @@ void EffectComposer::destroyComposerTexture(Drawable *drawable) {
     vkFreeDescriptorSets(device, descriptorPool->handle, 1, &drawable->composerTexture->vkDescriptorSet);
     
     poolsBuffer.removeImageBinding(drawable->composerTexture->srcImage);
+    vkDestroySampler(device, drawable->composerTexture->srcSampler, nullptr);
     vkFreeMemory(device, drawable->composerTexture->srcMemory, nullptr);
     vkDestroyImageView(device, drawable->composerTexture->srcImageView, nullptr);
     vkDestroyImage(device, drawable->composerTexture->srcImage, nullptr);
