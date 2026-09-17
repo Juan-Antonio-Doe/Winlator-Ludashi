@@ -277,8 +277,8 @@ public class XServerView extends XServerRendererView implements SurfaceHolder.Ca
     }
     
     @Override
-    public void onReparentWindow(Window window, Window newParent) {
-        nativeReparentWindow(window.id, newParent.id);
+    public void onReparentWindow(Window window, Window newParent, short x, short y) {
+        nativeReparentWindow(window.id, newParent.id, x, y);
     }
     
     @Override
@@ -347,7 +347,7 @@ public class XServerView extends XServerRendererView implements SurfaceHolder.Ca
     @FastNative
     public native void nativeUpdateWindowContent(int id);
     @FastNative
-    public native void nativeReparentWindow(int id, int parentId);
+    public native void nativeReparentWindow(int id, int parentId, short x, short y);
     @FastNative
     public native void nativePause();
     @FastNative
@@ -360,4 +360,8 @@ public class XServerView extends XServerRendererView implements SurfaceHolder.Ca
     public native void nativeUpdateDirectContent(int windowId, int drawableId);
     @FastNative
     public native void nativeRemoveDirectContent(int windowId, int pixmapId);
+    @FastNative
+    public native void nativeSetCompositeRedirected(int windowId, boolean redirected);
+    @FastNative
+    public native void nativeCompositeRedirect(int srcDrawableId, int dstDrawableId, short dstX, short dstY);
 }
