@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Gamepad
 import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -86,6 +87,7 @@ import com.winlator.cmod.core.StringUtils
 import com.winlator.cmod.fexcore.FEXCorePresetManager
 import com.winlator.cmod.inputcontrols.InputControlsManager
 import com.winlator.cmod.midi.MidiManager
+import com.winlator.cmod.ui.library.GameSavesComposeDialog
 import com.winlator.cmod.ui.settings.ContainersSettingsActivity
 import com.winlator.cmod.ui.settings.CpuSelectorRow
 import com.winlator.cmod.ui.settings.DriverOption
@@ -490,6 +492,10 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
         }
     }
 
+    fun openGameSaves() {
+        GameSavesComposeDialog.show(fragment, shortcut)
+    }
+
     fun createContainer() {
         context.startActivity(Intent(context, ContainersSettingsActivity::class.java))
     }
@@ -564,7 +570,7 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
                             category, state, catalog, screenEntries, graphicsEntries, audioEntries,
                             wrapperEntries, localeEntries, soundFonts, gpuNames, fexPresets, boxPresets,
                             profiles, containers, ::environmentLabel, ::changeContainer, ::createContainer, ::enterContainer,
-                            ::installRuntime, ::installDriver, context
+                            ::openGameSaves, ::installRuntime, ::installDriver, context
                         )
                     }
                 }
@@ -590,7 +596,7 @@ internal fun ShortcutEditorV2(fragment: Fragment, shortcut: Shortcut, close: () 
                             category, state, catalog, screenEntries, graphicsEntries, audioEntries,
                             wrapperEntries, localeEntries, soundFonts, gpuNames, fexPresets, boxPresets,
                             profiles, containers, ::environmentLabel, ::changeContainer, ::createContainer, ::enterContainer,
-                            ::installRuntime, ::installDriver, context
+                            ::openGameSaves, ::installRuntime, ::installDriver, context
                         )
                     }
                 }
@@ -643,6 +649,7 @@ private fun ShortcutCategoryV2(
     changeContainer: (Int) -> Unit,
     createContainer: () -> Unit,
     enterContainer: () -> Unit,
+    openGameSaves: () -> Unit,
     installRuntime: (String, String, (String) -> Unit) -> Unit,
     installDriver: (DriverOption) -> Unit,
     context: Context
@@ -734,6 +741,29 @@ private fun ShortcutCategoryV2(
                 val sound = s.midiSoundFont.ifBlank { "Disabled" }
                 SettingChoice("MIDI SoundFont", sound, soundFonts) {
                     s.midiSoundFont = if (it == "Disabled") "" else it; s.extra("midiSoundFont", s.midiSoundFont.ifBlank { null })
+                }
+            }
+            SettingsCard {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Outlined.Folder,
+                        null,
+                        modifier = Modifier.size(22.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.size(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Game Saves", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Back up, restore and manage save locations",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(onClick = openGameSaves) { Text("Manage") }
                 }
             }
         }
