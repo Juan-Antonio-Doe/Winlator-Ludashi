@@ -1458,17 +1458,27 @@ public class WinlatorHUD extends View {
         requestRelayout();
     }
 
+    public float getHudAlpha() {
+        return hudAlpha;
+    }
+
+    public float getHudScale() {
+        return getScaleX();
+    }
+
     public void syncCheckboxes(android.widget.CheckBox cbFps,
             android.widget.CheckBox cbGpu,
             android.widget.CheckBox cbCpuRam,
             android.widget.CheckBox cbBattTemp,
             android.widget.CheckBox cbGraph,
-            android.widget.CheckBox cbRenderer) {
+            android.widget.CheckBox cbRenderer,
+            android.widget.CheckBox cbRam) {
         if (cbFps != null) cbFps.setChecked((showMask & SHOW_FPS) != 0);
         if (cbGpu != null) cbGpu.setChecked((showMask & SHOW_GPU_USAGE) != 0);
         if (cbCpuRam != null) cbCpuRam.setChecked((showMask & SHOW_CPU_USAGE) != 0);
         if (cbBattTemp != null) cbBattTemp.setChecked((showMask & SHOW_POWER) != 0);
         if (cbRenderer != null) cbRenderer.setChecked((showMask & SHOW_RENDERER) != 0);
+        if (cbRam != null) cbRam.setChecked((showMask & SHOW_RAM) != 0);
     }
 
     public void setDataSource(Object dataSource) {}
@@ -1504,11 +1514,28 @@ public class WinlatorHUD extends View {
             touchDownMs = 0;
             rendererActive = true;
             userEnabled = true;
-            prefs.edit().putBoolean(KEY_VIS, true).apply();
+            showMask = SHOW_DEFAULT;
+            hudAlpha = 1.0f;
+            vertical = false;
+            prefs.edit()
+                    .putInt(KEY_SHOW, SHOW_DEFAULT)
+                    .putInt(KEY_ALPHA, 100)
+                    .putBoolean(KEY_VERT, false)
+                    .putFloat(KEY_SCALE, 1.0f)
+                    .putFloat(KEY_X, 16f)
+                    .putFloat(KEY_Y, 16f)
+                    .putBoolean(KEY_VIS, true)
+                    .putBoolean(KEY_DUAL_CELL, false)
+                    .apply();
+            setScaleX(1.0f);
+            setScaleY(1.0f);
+            setX(16f);
+            setY(16f);
             if (!mesaRendererActive) refreshBackendRenderer(true);
             startStatsThread();
             setVisibility(VISIBLE);
             scheduleRedraw();
+            requestRelayout();
         });
     }
 

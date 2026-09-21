@@ -1697,8 +1697,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
         if (llModernOptions != null) llModernOptions.setVisibility(isModern ? View.VISIBLE : View.GONE);
 
         if (modernHud != null) {
-            modernHud.syncCheckboxes(cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer);
-            if (cbRam != null) cbRam.setChecked(true);
+            syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbGraph, cbRenderer, sbScale, sbAlpha);
             bindModernHudCheckboxes(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer);
         }
         if (sbScale != null) sbScale.setOnValueChangeListener((sb, v) -> {
@@ -1708,7 +1707,12 @@ public class XServerDisplayActivity extends AppCompatActivity {
             if (modernHud != null) modernHud.setHudAlpha(v / 100f);
         });
         if (btResetHud != null) btResetHud.setOnClickListener(v -> {
-            if (modernHud != null) modernHud.forceReset();
+            if (swHudMaster != null && swHudMaster.isChecked() && spHudStyle != null && spHudStyle.getSelectedItemPosition() == 1) {
+                if (modernHud != null) {
+                    modernHud.forceReset();
+                    syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbGraph, cbRenderer, sbScale, sbAlpha);
+                }
+            }
         });
 
         if (swHudMaster != null) {
@@ -1721,8 +1725,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                     if (llModernOptions != null)
                         llModernOptions.setVisibility(style == 2 ? View.VISIBLE : View.GONE);
                     if (style == 2 && modernHud != null) {
-                        modernHud.syncCheckboxes(cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer);
-                        if (cbRam != null) cbRam.setChecked(true);
+                        syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbGraph, cbRenderer, sbScale, sbAlpha);
                         bindModernHudCheckboxes(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer);
                     }
                     saveHudModeToContainer(style);
@@ -1749,8 +1752,7 @@ public class XServerDisplayActivity extends AppCompatActivity {
                         if (llModernOptions != null)
                             llModernOptions.setVisibility(newStyle == 2 ? View.VISIBLE : View.GONE);
                         if (newStyle == 2 && modernHud != null) {
-                            modernHud.syncCheckboxes(cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer);
-                            if (cbRam != null) cbRam.setChecked(true);
+                            syncModernHudSidebarUI(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbGraph, cbRenderer, sbScale, sbAlpha);
                             bindModernHudCheckboxes(cbFps, cbGpu, cbCpuRam, cbRam, cbBattTemp, cbRenderer);
                         }
                         saveHudModeToContainer(newStyle);
@@ -1759,6 +1761,15 @@ public class XServerDisplayActivity extends AppCompatActivity {
                 }
             ));
         }
+    }
+
+    private void syncModernHudSidebarUI(CheckBox cbFps, CheckBox cbGpu, CheckBox cbCpuRam,
+                                        CheckBox cbRam, CheckBox cbBattTemp, CheckBox cbGraph,
+                                        CheckBox cbRenderer, SeekBar sbScale, SeekBar sbAlpha) {
+        if (modernHud == null) return;
+        modernHud.syncCheckboxes(cbFps, cbGpu, cbCpuRam, cbBattTemp, cbGraph, cbRenderer, cbRam);
+        if (sbScale != null) sbScale.setValue((modernHud.getHudScale() - 1f) * 50f + 50f);
+        if (sbAlpha != null) sbAlpha.setValue(modernHud.getHudAlpha() * 100f);
     }
 
     private void enableHudLazily(int style) {
