@@ -2,7 +2,13 @@ package com.winlator.cmod.winhandler;
 
 import static com.winlator.cmod.inputcontrols.ExternalController.TRIGGER_IS_AXIS;
 
+import android.content.Context;
 import android.content.SharedPreferences;
+import android.hardware.input.InputManager;
+import android.net.LocalServerSocket;
+import android.net.LocalSocket;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -13,6 +19,7 @@ import com.winlator.cmod.XServerDisplayActivity;
 import com.winlator.cmod.core.StringUtils;
 import com.winlator.cmod.inputcontrols.ControlsProfile;
 import com.winlator.cmod.inputcontrols.ExternalController;
+import com.winlator.cmod.inputcontrols.FakeInputWriter;
 import com.winlator.cmod.inputcontrols.GamepadState;
 import com.winlator.cmod.math.Mathf;
 import com.winlator.cmod.xserver.XServer;
@@ -26,7 +33,11 @@ import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -49,6 +60,7 @@ public class WinHandler {
     private boolean initReceived = false;
     private boolean running = false;
     private OnGetProcessInfoListener onGetProcessInfoListener;
+    private final Map<Integer, ExternalController> controllers = new HashMap<>();
     private ExternalController currentController;
     private InetAddress localhost;
     private byte inputType = DEFAULT_INPUT_TYPE;
@@ -57,9 +69,24 @@ public class WinHandler {
     private SharedPreferences preferences;
     private byte triggerType;
 
+    private static final int MAX_CONTROLLERS = 4;
+    private static final int OSC_DEVICE_ID = -1;
+    private FakeInputWriter[] writers = new FakeInputWriter[MAX_CONTROLLERS];
+    private Map<Integer, Integer> deviceToSlot = new HashMap<>();
+    private Set<Integer> usedSlots = new HashSet<>();
+    private String fakeInputBasePath;
+    private LocalServerSocket vibrationServer;
+    private volatile boolean vibrationRunning = false;
+    private boolean[] vibrationEnabledSlots = new boolean[MAX_CONTROLLERS];
+
     private boolean xinputDisabled; // Used for exclusive mouse controllegacy
     private boolean xinputDisabledInitialized = false;
 
+
+    private int fallbackSlot = -1;
+
+    private final InputManager inputManager;
+    private final InputManager.InputDeviceListener inputDeviceListener;
 
     private boolean useLegacyInputMethod = false; // Default to using the new input method
     // Add this field near the other field declarations at the top of the class
@@ -171,7 +198,28 @@ public class WinHandler {
 
     public WinHandler(XServerDisplayActivity activity) {
         this.activity = activity;
+        this.inputManager = (InputManager) activity.getSystemService(Context.INPUT_SERVICE);
+        this.inputDeviceListener = new InputManager.InputDeviceListener() {
+            @Override
+            public void onInputDeviceAdded(int deviceId) {
+            }
+
+            @Override
+            public void onInputDeviceRemoved(int deviceId) {
+                releaseSlot(deviceId);
+            }
+
+            @Override
+            public void onInputDeviceChanged(int deviceId) {
+            }
+        };
+        inputManager.registerInputDeviceListener(inputDeviceListener, null);
+
         preferences = PreferenceManager.getDefaultSharedPreferences(activity.getBaseContext());
+
+        for (int i = 0; i < MAX_CONTROLLERS; i++) {
+            vibrationEnabledSlots[i] = preferences.getBoolean("vibration_slot_" + i, true);
+        }
     }
     private boolean sendPacket(int port) {
         try {
@@ -365,6 +413,7 @@ public class WinHandler {
 
     public void stop() {
         running = false;
+        closeFakeInputWriter();
 
         if (socket != null) {
             socket.close();
@@ -376,12 +425,169 @@ public class WinHandler {
         }
     }
 
+    public void startVibrationListener() {
+        if (vibrationRunning)
+            return;
+        vibrationRunning = true;
+
+        Executors.newSingleThreadExecutor().execute(() -> {
+            try {
+                vibrationServer = new LocalServerSocket("winlator_vibration");
+                Log.d("WinHandler", "Vibration listener started on abstract socket: winlator_vibration");
+
+                while (vibrationRunning) {
+                    LocalSocket client = vibrationServer.accept();
+                    try {
+                        java.io.InputStream is = client.getInputStream();
+                        byte[] buf = new byte[8];
+                        int read = is.read(buf);
+                        if (read == 8) {
+                            int strong = (buf[0] & 0xFF) | ((buf[1] & 0xFF) << 8);
+                            int weak = (buf[2] & 0xFF) | ((buf[3] & 0xFF) << 8);
+                            int durationMs = (buf[4] & 0xFF) | ((buf[5] & 0xFF) << 8);
+                            int slot = (buf[6] & 0xFF) | ((buf[7] & 0xFF) << 8);
+                            triggerVibration(strong, weak, durationMs, slot);
+                        }
+                        client.close();
+                    } catch (IOException e) {
+                        Log.e("WinHandler", "Vibration client error: " + e.getMessage());
+                    }
+                }
+            } catch (IOException e) {
+                if (vibrationRunning) {
+                    Log.e("WinHandler", "Vibration listener error: " + e.getMessage());
+                }
+            }
+        });
+    }
+
+    private void triggerVibration(int strong, int weak, int durationMs, int slot) {
+        if (!isValidSlot(slot) || !vibrationEnabledSlots[slot])
+            return;
+
+        boolean shouldCancel = (durationMs == 0 && strong == 0 && weak == 0);
+
+        Vibrator vibrator = null;
+        android.os.VibratorManager vibratorManager = null;
+        boolean hasMultiMotor = false;
+
+        Integer deviceId = null;
+        for (Map.Entry<Integer, Integer> entry : deviceToSlot.entrySet()) {
+            if (entry.getValue() == slot) {
+                deviceId = entry.getKey();
+                break;
+            }
+        }
+
+        if (deviceId != null && deviceId.equals(OSC_DEVICE_ID)) {
+            vibrator = (Vibrator) activity.getSystemService(Context.VIBRATOR_SERVICE);
+        } else if (deviceId != null) {
+            android.view.InputDevice device = android.view.InputDevice.getDevice(deviceId);
+            if (device != null) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    vibratorManager = device.getVibratorManager();
+                    if (vibratorManager != null && vibratorManager.getVibratorIds().length > 1) {
+                        hasMultiMotor = true;
+                    }
+                }
+
+                if (!hasMultiMotor) {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+                            && vibratorManager != null) {
+                        int[] ids = vibratorManager.getVibratorIds();
+                        if (ids.length > 0) {
+                            vibrator = vibratorManager.getVibrator(ids[0]);
+                        }
+                    } else {
+                        vibrator = device.getVibrator();
+                    }
+
+                    if (vibrator == null || !vibrator.hasVibrator()) {
+                        if (!deviceToSlot.containsKey(OSC_DEVICE_ID)
+                                && (fallbackSlot == -1 || fallbackSlot == slot)) {
+                            vibrator = (Vibrator) activity.getSystemService(Context.VIBRATOR_SERVICE);
+                            fallbackSlot = slot;
+                        } else {
+                            vibrator = null;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (hasMultiMotor && vibratorManager != null
+                && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            int[] vibratorIds = vibratorManager.getVibratorIds();
+
+            if (vibratorIds.length >= 1) {
+                Vibrator vStrong = vibratorManager.getVibrator(vibratorIds[0]);
+                if (!shouldCancel && strong > 0) {
+                    int amplitude = clampAmplitude(strong);
+                    int duration = Math.max(1, durationMs);
+                    vStrong.vibrate(VibrationEffect.createOneShot(duration, amplitude));
+                } else {
+                    vStrong.cancel();
+                }
+            }
+
+            if (vibratorIds.length >= 2) {
+                Vibrator vWeak = vibratorManager.getVibrator(vibratorIds[1]);
+                if (!shouldCancel && weak > 0) {
+                    int amplitude = clampAmplitude(weak);
+                    int duration = Math.max(1, durationMs);
+                    vWeak.vibrate(VibrationEffect.createOneShot(duration, amplitude));
+                } else {
+                    vWeak.cancel();
+                }
+            }
+            return;
+        }
+
+        if (vibrator == null || !vibrator.hasVibrator())
+            return;
+
+        if (!shouldCancel && (strong > 0 || weak > 0)) {
+            int intensity = Math.max(strong, weak);
+            int amplitude = clampAmplitude(intensity);
+            int duration = Math.max(1, durationMs);
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(duration, amplitude));
+            } else {
+                vibrator.vibrate(duration);
+            }
+        } else {
+            vibrator.cancel();
+        }
+    }
+
+    private int clampAmplitude(int value) {
+        return Math.min(255, Math.max(1, (int) ((value / 65535.0f) * 255)));
+    }
+
+    private boolean isValidSlot(int slot) {
+        return slot >= 0 && slot < MAX_CONTROLLERS;
+    }
+
+    public boolean isVibrationEnabledForSlot(int slot) {
+        return isValidSlot(slot) && vibrationEnabledSlots[slot];
+    }
+
+    public void setVibrationEnabledForSlot(int slot, boolean enabled) {
+        if (isValidSlot(slot)) {
+            vibrationEnabledSlots[slot] = enabled;
+            preferences.edit().putBoolean("vibration_slot_" + slot, enabled).apply();
+        }
+    }
+
+    public int getMaxControllers() {
+        return MAX_CONTROLLERS;
+    }
+
     private void handleRequest(byte requestCode, final int port) {
         switch (requestCode) {
             case RequestCodes.INIT: {
                 initReceived = true;
-
-
 
                 preferences = PreferenceManager.getDefaultSharedPreferences(activity.getBaseContext());
 
@@ -432,7 +638,8 @@ public class WinHandler {
                 receiveData.get(bytes);
                 String name = StringUtils.fromANSIString(bytes);
 
-                onGetProcessInfoListener.onGetProcessInfo(index, numProcesses, new ProcessInfo(pid, name, memoryUsage, affinityMask, wow64Process));
+                onGetProcessInfoListener.onGetProcessInfo(index, numProcesses,
+                        new ProcessInfo(pid, name, memoryUsage, affinityMask, wow64Process));
                 break;
             }
             case RequestCodes.GET_GAMEPAD: {
@@ -511,6 +718,10 @@ public class WinHandler {
                 break;
             }
             case RequestCodes.RELEASE_GAMEPAD: {
+                // currentController = null; // No longer needed
+                // Maybe clear all controllers or reset mapping?
+                // For now, doing nothing is safest as mapping is sticky.
+                // ToDo: Ludashi code ^
                 currentController = null;
                 gamepadClients.clear();
                 break;
@@ -567,9 +778,26 @@ public class WinHandler {
     }
 
     public void sendGamepadState() {
-        if (!initReceived || gamepadClients.isEmpty() || xinputDisabled ) return; // Add this check
         final ControlsProfile profile = activity.getInputControlsView().getProfile();
-        final boolean useVirtualGamepad = profile != null && profile.isVirtualGamepad();
+        if (profile == null) {
+            releaseSlot(OSC_DEVICE_ID);
+            return;
+        }
+
+        final GamepadState gamepadState = profile.getGamepadState();
+        final boolean useVirtualGamepad = profile.isVirtualGamepad()
+                && activity.getInputControlsView().isShowTouchscreenControls();
+
+        if (useVirtualGamepad) {
+            int slot = assignSlot(OSC_DEVICE_ID);
+            if (slot >= 0 && writers[slot] != null) {
+                writers[slot].writeGamepadState(gamepadState);
+            }
+        } else {
+            releaseSlot(OSC_DEVICE_ID);
+        }
+
+        // ToDo start: Gyro code from Bionic to Ludashi code:
         final boolean enabled = currentController != null || useVirtualGamepad;
 
         for (final int port : gamepadClients) {
@@ -592,6 +820,64 @@ public class WinHandler {
                 sendPacket(port);
             });
         }
+        // ToDo end.
+    }
+
+    public void sendGamepadState(ExternalController controller) {
+        if (controller == null)
+            return;
+
+        ControlsProfile profile = activity.getInputControlsView().getProfile();
+        if (profile != null) {
+            ExternalController profileController = profile.getController(controller.getDeviceId());
+            if (profileController != null && profileController.getControllerBindingCount() > 0) {
+                int slot = assignSlot(controller.getDeviceId());
+                if (slot >= 0 && writers[slot] != null) {
+                    writers[slot].writeGamepadState(controller.remappedState);
+                }
+                return;
+            }
+        }
+
+        int slot = assignSlot(controller.getDeviceId());
+        if (slot >= 0 && writers[slot] != null) {
+            writers[slot].writeGamepadState(controller.state);
+        }
+    }
+
+    private int assignSlot(int deviceId) {
+        Integer existing = deviceToSlot.get(deviceId);
+        if (existing != null)
+            return existing;
+
+        for (int slot = 0; slot < MAX_CONTROLLERS; slot++) {
+            if (!usedSlots.contains(slot)) {
+                usedSlots.add(slot);
+                deviceToSlot.put(deviceId, slot);
+                if (fakeInputBasePath != null && writers[slot] == null) {
+                    writers[slot] = new FakeInputWriter(fakeInputBasePath, slot);
+                    writers[slot].open();
+                    Log.d("WinHandler", "Assigned device " + deviceId + " to slot " + slot);
+                }
+                return slot;
+            }
+        }
+        Log.w("WinHandler", "No slots available for device " + deviceId);
+        return -1;
+    }
+
+    private void releaseSlot(int deviceId) {
+        Integer slot = deviceToSlot.remove(deviceId);
+        if (slot != null) {
+            if (fallbackSlot == slot) fallbackSlot = -1;
+            if (writers[slot] != null) {
+                writers[slot].destroy();
+                writers[slot] = null;
+            }
+            usedSlots.remove(slot);
+            controllers.remove(deviceId);
+            Log.d("WinHandler", "Device " + deviceId + " disconnected (or OSC disabled). Slot released: " + slot);
+        }
     }
 
     public void setXInputDisabled(boolean disabled) {
@@ -600,7 +886,49 @@ public class WinHandler {
         Log.d("WinHandler", "XInput Disabled set to: " + xinputDisabled);
     }
 
+    public void setFakeInputPath(String fakeInputPath) {
+        if (fakeInputPath != null && !fakeInputPath.isEmpty()) {
+            this.fakeInputBasePath = fakeInputPath;
+            Log.d("WinHandler", "FakeInputWriter base path set: " + fakeInputPath);
+            startVibrationListener();
+        }
+    }
 
+    public void closeFakeInputWriter() {
+        if (inputManager != null && inputDeviceListener != null) {
+            inputManager.unregisterInputDeviceListener(inputDeviceListener);
+        }
+        for (int i = 0; i < MAX_CONTROLLERS; i++) {
+            if (writers[i] != null) {
+                writers[i].destroy();
+                writers[i] = null;
+            }
+        }
+        deviceToSlot.clear();
+        usedSlots.clear();
+        controllers.clear();
+        fallbackSlot = -1;
+
+        vibrationRunning = false;
+        if (vibrationServer != null) {
+            try {
+                vibrationServer.close();
+            } catch (IOException e) {
+            }
+            vibrationServer = null;
+        }
+    }
+
+    private ExternalController getController(int deviceId) {
+        if (controllers.containsKey(deviceId)) {
+            return controllers.get(deviceId);
+        }
+        ExternalController controller = ExternalController.getController(deviceId);
+        if (controller != null) {
+            controllers.put(deviceId, controller);
+        }
+        return controller;
+    }
 
 //    public boolean onGenericMotionEvent(MotionEvent event) {
 //        boolean handled = false;
@@ -612,6 +940,19 @@ public class WinHandler {
 //    }
 
     public boolean onGenericMotionEvent(MotionEvent event) {
+        boolean handled = false;
+        ExternalController controller = getController(event.getDeviceId());
+
+        if (controller != null) {
+            handled = controller.updateStateFromMotionEvent(event);
+            if (handled)
+                sendGamepadState(controller);
+        }
+        return handled;
+    }
+
+    // ToDo start: Merge/implement old gyro code to the new Ludashi code:
+    /*public boolean onGenericMotionEvent(MotionEvent event) {
         boolean handled = false;
         if (currentController != null && currentController.getDeviceId() == event.getDeviceId()) {
             handled = currentController.updateStateFromMotionEvent(event);
@@ -650,10 +991,30 @@ public class WinHandler {
             }
         }
         return handled;
-    }
-
+    }*/
+    // ToDo end.
 
     public boolean onKeyEvent(KeyEvent event) {
+        boolean handled = false;
+        ExternalController controller = getController(event.getDeviceId());
+
+        if (controller != null && event.getRepeatCount() == 0) {
+            int action = event.getAction();
+
+            if (action == KeyEvent.ACTION_DOWN) {
+                handled = controller.updateStateFromKeyEvent(event);
+            } else if (action == KeyEvent.ACTION_UP) {
+                handled = controller.updateStateFromKeyEvent(event);
+            }
+
+            if (handled)
+                sendGamepadState(controller);
+        }
+        return handled;
+    }
+
+    // ToDo start: Merge/implement old gyro code to the new Ludashi code:
+    /*public boolean onKeyEvent(KeyEvent event) {
         boolean handled = false;
 
         if (event.getKeyCode() == gyroTriggerButton) {
@@ -689,8 +1050,8 @@ public class WinHandler {
             if (handled) sendGamepadState();
         }
         return handled;
-    }
-
+    }*/
+    // ToDo end.
 
     public byte getInputType() {
         return inputType;
@@ -700,6 +1061,7 @@ public class WinHandler {
         this.inputType = inputType;
     }
 
+    // Removed in Ludashi code:
     public ExternalController getCurrentController() {
         return currentController;
     }
@@ -711,6 +1073,7 @@ public class WinHandler {
         Executors.newSingleThreadScheduledExecutor().schedule(() -> exec(command), delaySeconds, TimeUnit.SECONDS);
     }
 
+    // `initializeController` and `refreshControllerMappings` were also removed in Ludashi code.
     public void initializeController() {
         currentController = ExternalController.getController(0);
         if (currentController != null) {

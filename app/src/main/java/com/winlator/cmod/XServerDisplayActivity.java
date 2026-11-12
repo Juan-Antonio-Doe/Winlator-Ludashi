@@ -221,6 +221,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
     }
 
+    // Removed in Ludashi code
     private final SensorEventListener gyroListener = new SensorEventListener() {
         @Override
         public void onSensorChanged(SensorEvent event) {
@@ -297,25 +298,22 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
         // Initialize the WinHandler after context is set up
         winHandler = new WinHandler(this);
-        winHandler.initializeController();
-        controller = winHandler.getCurrentController();
+        winHandler.initializeController();  // Removed in Ludashi code
+        controller = winHandler.getCurrentController(); // Removed in Ludashi code
 
         if (isOpenWithAndroidBrowser || isShareAndroidClipboard)
             wineRequestHandler = new WineRequestHandler(this);
 
+        // Removed in Ludashi code
         if (controller != null) {
             int triggerType = preferences.getInt("trigger_type", ExternalController.TRIGGER_IS_AXIS); // Default to TRIGGER_IS_AXIS
             controller.setTriggerType((byte) triggerType); // Cast to byte if needed
         }
 
-
-
         // Check if xinputDisabled extra is passed
         boolean xinputDisabledFromShortcut = false;
 
-
-
-
+        // Start: Removed in Ludashi code
         // Initialize SensorManager
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         gyroSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
@@ -326,7 +324,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             // Register the sensor event listener
             sensorManager.registerListener(gyroListener, gyroSensor, SensorManager.SENSOR_DELAY_GAME);
         }
-
+        // End.
 
 
         // Record the start time
@@ -386,6 +384,17 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         });
 
         imageFs = ImageFs.find(this);
+
+        File devInputDir = new File(imageFs.getRootDir(), "dev/input");
+        if (devInputDir.exists() || devInputDir.mkdirs()) {
+            for (int i = 0; i < 4; i++) {
+                File eventFile = new File(devInputDir, "event" + i);
+                if (eventFile.exists())
+                    eventFile.delete();
+            }
+        }
+
+        winHandler.setFakeInputPath(devInputDir.getAbsolutePath());
 
         String screenSize = Container.DEFAULT_SCREEN_SIZE;
         containerManager = new ContainerManager(this);
@@ -783,8 +792,9 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     @Override
     public void onResume() {
         super.onResume();
-        boolean gyroEnabled = preferences.getBoolean("gyro_enabled", true);
+        boolean gyroEnabled = preferences.getBoolean("gyro_enabled", true); // Removed in Ludashi code
 
+        // Removed in Ludashi code
         if (gyroEnabled) {
             // Re-register the sensor listener when the activity is resumed
             sensorManager.registerListener(gyroListener, gyroSensor, SensorManager.SENSOR_DELAY_GAME);
@@ -814,8 +824,9 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         if (NotificationService.isRunning())
             NotificationService.acquireLock();
             
-        boolean gyroEnabled = preferences.getBoolean("gyro_enabled", true);
+        boolean gyroEnabled = preferences.getBoolean("gyro_enabled", true); // Removed in Ludashi code
 
+        // Removed in Ludashi code
         if (gyroEnabled) {
             // Unregister the sensor listener when the activity is paused
             sensorManager.unregisterListener(gyroListener);
@@ -878,7 +889,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 handler.removeCallbacks(savePlaytimeRunnable);
                 if (midiHandler != null) midiHandler.stop();
                 // Unregister sensor listener to avoid memory leaks
-                if (sensorManager != null) sensorManager.unregisterListener(gyroListener);
+                if (sensorManager != null) sensorManager.unregisterListener(gyroListener);  // Removed in Ludashi code
                 if (environment != null) environment.stopEnvironmentComponents();
                 if (preloaderDialog != null && preloaderDialog.isShowing()) preloaderDialog.closeOnUiThread();
                 if (winHandler != null) winHandler.stop();
@@ -928,6 +939,29 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
     }
 
+    private void showVibrationDialog() {
+        if (winHandler == null)
+            return;
+
+        Context context = this;
+        int maxControllers = winHandler.getMaxControllers();
+        boolean[] checkedItems = new boolean[maxControllers];
+        String[] items = new String[maxControllers];
+
+        for (int i = 0; i < maxControllers; i++) {
+            items[i] = getString(R.string.vibration_slot, i + 1);
+            checkedItems[i] = winHandler.isVibrationEnabledForSlot(i);
+        }
+
+        new androidx.appcompat.app.AlertDialog.Builder(context)
+                .setTitle(R.string.vibration)
+                .setMultiChoiceItems(items, checkedItems, (dialog, which, isChecked) -> {
+                    winHandler.setVibrationEnabledForSlot(which, isChecked);
+                })
+                .setPositiveButton(R.string.ok, null)
+                .show();
+    }
+
     @SuppressLint("SourceLockedOrientationActivity")
     @Override
     public boolean onNavigationItemSelected(@NonNull MenuItem item) {
@@ -940,6 +974,10 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
                 break;
             case R.id.main_menu_input_controls:
                 showInputControlsDialog();
+                drawerLayout.closeDrawers();
+                break;
+            case R.id.main_menu_vibration:
+                showVibrationDialog();
                 drawerLayout.closeDrawers();
                 break;
             case R.id.main_menu_relative_mouse_movement:
