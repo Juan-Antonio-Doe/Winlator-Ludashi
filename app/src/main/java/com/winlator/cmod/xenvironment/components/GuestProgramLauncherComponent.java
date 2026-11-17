@@ -336,6 +336,13 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         String nativeLibDir = environment.getContext().getApplicationInfo().nativeLibraryDir;
         File fakeinputSrc = new File(nativeLibDir, "libfakeinput.so");
 
+        // Wine's winebus loads SDL by its versioned soname, but the imagefs only ships libSDL2-2.0.so
+        File sdlLib = new File(imageFs.getLibDir(), "libSDL2-2.0.so");
+        File sdlLink = new File(imageFs.getLibDir(), "libSDL2-2.0.so.0");
+        if (sdlLib.exists() && !sdlLink.exists()) {
+            FileUtils.symlink("libSDL2-2.0.so", sdlLink.getAbsolutePath());
+        }
+
         Log.d("GuestLauncher", "nativeLibDir: " + nativeLibDir);
         Log.d("GuestLauncher", "fakeinputSrc exists: " + fakeinputSrc.exists());
         Log.d("GuestLauncher", "fakeinputDest: " + fakeinputDest.getAbsolutePath());

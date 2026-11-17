@@ -95,20 +95,16 @@ public class ExternalController {
         public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
             switch (key) {
                 case PreferenceKeys.DEADZONE_LEFT:
-                    deadzoneLeft = sharedPreferences.getInt(PreferenceKeys.DEADZONE_LEFT, 10) / 100.0f;
-                    Log.d("ExternalController", "Deadzone Left updated: " + deadzoneLeft);
+                    deadzoneLeft = sharedPreferences.getFloat(PreferenceKeys.DEADZONE_LEFT, 0.1f);
                     break;
                 case PreferenceKeys.DEADZONE_RIGHT:
-                    deadzoneRight = sharedPreferences.getInt(PreferenceKeys.DEADZONE_RIGHT, 10) / 100.0f;
-                    Log.d("ExternalController", "Deadzone Right updated: " + deadzoneRight);
+                    deadzoneRight = sharedPreferences.getFloat(PreferenceKeys.DEADZONE_RIGHT, 0.1f);
                     break;
                 case PreferenceKeys.SENSITIVITY_LEFT:
-                    sensitivityLeft = sharedPreferences.getInt(PreferenceKeys.SENSITIVITY_LEFT, 100) / 100.0f;
-                    Log.d("ExternalController", "Sensitivity Left updated: " + sensitivityLeft);
+                    sensitivityLeft = sharedPreferences.getFloat(PreferenceKeys.SENSITIVITY_LEFT, 1.0f);
                     break;
                 case PreferenceKeys.SENSITIVITY_RIGHT:
-                    sensitivityRight = sharedPreferences.getInt(PreferenceKeys.SENSITIVITY_RIGHT, 100) / 100.0f;
-                    Log.d("ExternalController", "Sensitivity Right updated: " + sensitivityRight);
+                    sensitivityRight = sharedPreferences.getFloat(PreferenceKeys.SENSITIVITY_RIGHT, 1.0f);
                     break;
                 case PreferenceKeys.INVERT_LEFT_X:
                     invertLeftX = sharedPreferences.getBoolean(PreferenceKeys.INVERT_LEFT_X, false);
@@ -127,6 +123,7 @@ public class ExternalController {
                     Log.d("ExternalController", "Invert Right Y updated: " + invertRightY);
                     break;
             }
+            useSquareDeadzoneLeft = sharedPreferences.getBoolean(PreferenceKeys.SQUARE_DEADZONE_LEFT, false);
         }
     };
 

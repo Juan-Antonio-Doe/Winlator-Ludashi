@@ -30,6 +30,9 @@
 #include <sys/sysmacros.h>
 #include <linux/input.h>
 
+/*#include <android/log.h>
+#define FI_LOG(...) __android_log_print(ANDROID_LOG_DEBUG, "FakeInput", __VA_ARGS__)*/
+
 #define EXPORT __attribute__((visibility("default"))) extern "C"
 
 std::unordered_map<int, const char *> controller_map;
@@ -117,6 +120,9 @@ static void library_init() {
 
 	vibration_enabled = getenv("FAKE_EVDEV_VIBRATION") && atoi(getenv("FAKE_EVDEV_VIBRATION"));
 	Logger::init();
+    /*FI_LOG("loaded in pid %d, hook_dir=%s", getpid(), hook_dir);
+    void *h = dlopen("libSDL2-2.0.so.0", RTLD_NOW);
+    FI_LOG("dlopen SDL: %s", h ? "ok" : dlerror());*/
 }
   
 __attribute__((visibility("hidden"))) 
@@ -169,6 +175,8 @@ EXPORT int open(const char *pathname, int flags, ...) {
 			pathname = hook_dir;
 		}
 	}
+
+//    if (isFromInput) FI_LOG("open -> %s", pathname);
 	    
 	if (hasMode)
 	    fd = my_open(pathname, flags, mode);
@@ -213,6 +221,8 @@ EXPORT int openat(int dirfd, const char *pathname, int flags, ...) {
             pathname = hook_dir;             
         }
     }
+
+//    if (isFromInput) FI_LOG("open -> %s", pathname);
     
     if (hasMode)
         fd = my_openat(dirfd, pathname, flags, mode);
@@ -269,6 +279,7 @@ EXPORT int fstat(int fd, struct stat *buf) {
   }
 
 EXPORT int scandir(const char *dirp, struct dirent ***namelist, int(*filter)(const struct dirent *), int(*compar)(const struct dirent **, const struct dirent **)) {
+//    FI_LOG("scandir %s", dirp ? dirp : "null");
 	if (!my_scandir)
 		*(void **)&my_scandir = dlsym(RTLD_NEXT, "scandir");
 	
@@ -282,6 +293,7 @@ EXPORT int scandir(const char *dirp, struct dirent ***namelist, int(*filter)(con
 }
 
 EXPORT int inotify_add_watch(int fd, const char *pathname, uint32_t mask) {
+//    FI_LOG("inotify_add_watch %s", pathname ? pathname : "null");
 	if (!my_inotify_add_watch)
 		*(void **)&my_inotify_add_watch = dlsym(RTLD_NEXT, "inotify_add_watch");
 
@@ -471,6 +483,7 @@ EXPORT int ioctl(int fd, int op, ...) {
     }
     else {
     	Logger::log("Unhandled evdev ioctl, type %d number %d\n", type, number);
+//        FI_LOG("unhandled ioctl type %d number %d", type, number);
     	return syscall(SYS_ioctl, fd, op, argp);
     }
 }
