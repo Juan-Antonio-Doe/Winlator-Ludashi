@@ -1237,12 +1237,6 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         // Add the launcher to our environment
         environment.addComponent(guestProgramLauncherComponent);
 
-        // ToDo: Check also in Ludashi code, is this a leftover or useful at all?
-        File devInputDir = new File(imageFs.getRootDir(), "dev/input");
-        if (devInputDir.exists() || devInputDir.mkdirs()) {
-
-        }
-
         // Start all environment components (XServer, Audio, etc.)
         environment.startEnvironmentComponents();
 
@@ -1392,7 +1386,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
     }
 
-        private void showInputControlsDialog() {
+    private void showInputControlsDialog() {
         final ContentDialog dialog = new ContentDialog(this, R.layout.input_controls_dialog);
         dialog.setTitle(R.string.input_controls);
         dialog.setIcon(R.drawable.icon_input_controls);

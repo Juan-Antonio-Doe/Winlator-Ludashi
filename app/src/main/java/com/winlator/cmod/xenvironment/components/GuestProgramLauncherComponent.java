@@ -28,6 +28,7 @@ import com.winlator.cmod.core.WineInfo;
 import com.winlator.cmod.fexcore.FEXCoreManager;
 import com.winlator.cmod.fexcore.FEXCorePreset;
 import com.winlator.cmod.fexcore.FEXCorePresetManager;
+import com.winlator.cmod.inputcontrols.InputDebug;
 import com.winlator.cmod.xconnector.UnixSocketConfig;
 import com.winlator.cmod.xenvironment.EnvironmentComponent;
 import com.winlator.cmod.xenvironment.ImageFs;
@@ -339,8 +340,11 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
         // Wine's winebus loads SDL by its versioned soname, but the imagefs only ships libSDL2-2.0.so
         File sdlLib = new File(imageFs.getLibDir(), "libSDL2-2.0.so");
         File sdlLink = new File(imageFs.getLibDir(), "libSDL2-2.0.so.0");
-        if (sdlLib.exists() && !sdlLink.exists()) {
+        if (!sdlLib.exists()) {
+            Log.w("GuestLauncher", "libSDL2-2.0.so not found in imagefs: winebus will not detect gamepads");
+        } else if (!sdlLink.exists()) {
             FileUtils.symlink("libSDL2-2.0.so", sdlLink.getAbsolutePath());
+            Log.i("GuestLauncher", "Created libSDL2-2.0.so.0 symlink");
         }
 
         Log.d("GuestLauncher", "nativeLibDir: " + nativeLibDir);
@@ -374,6 +378,7 @@ public class GuestProgramLauncherComponent extends EnvironmentComponent {
 
         envVars.put("FAKE_EVDEV_DIR", devInputDir.getAbsolutePath());
         envVars.put("FAKE_EVDEV_VIBRATION", "1");
+        if (InputDebug.VERBOSE) envVars.put("FAKE_EVDEV_LOG", "1");
 
         Log.d("GuestLauncher", "Final LD_PRELOAD: " + ld_preload);
         envVars.put("LD_PRELOAD", ld_preload);

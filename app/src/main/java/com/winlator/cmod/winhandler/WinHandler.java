@@ -7,6 +7,7 @@ import android.content.SharedPreferences;
 import android.hardware.input.InputManager;
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
+import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.util.Log;
@@ -21,6 +22,7 @@ import com.winlator.cmod.inputcontrols.ControlsProfile;
 import com.winlator.cmod.inputcontrols.ExternalController;
 import com.winlator.cmod.inputcontrols.FakeInputWriter;
 import com.winlator.cmod.inputcontrols.GamepadState;
+import com.winlator.cmod.inputcontrols.InputDebug;
 import com.winlator.cmod.math.Mathf;
 import com.winlator.cmod.xserver.XServer;
 
@@ -34,11 +36,9 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayDeque;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -65,13 +65,12 @@ public class WinHandler {
     private byte inputType = DEFAULT_INPUT_TYPE;
     private final XServerDisplayActivity activity;
     private SharedPreferences preferences;
-    private byte triggerType;
 
     private static final int MAX_CONTROLLERS = 4;
     private static final int OSC_DEVICE_ID = -1;
     private FakeInputWriter[] writers = new FakeInputWriter[MAX_CONTROLLERS];
-    private Map<Integer, Integer> deviceToSlot = new HashMap<>();
-    private Set<Integer> usedSlots = new HashSet<>();
+    private Map<Integer, Integer> deviceToSlot = new ConcurrentHashMap<>();
+    private Set<Integer> usedSlots = ConcurrentHashMap.newKeySet();
     private String fakeInputBasePath;
     private LocalServerSocket vibrationServer;
     private volatile boolean vibrationRunning = false;
@@ -81,7 +80,7 @@ public class WinHandler {
     private boolean xinputDisabledInitialized = false;
 
 
-    private int fallbackSlot = -1;
+    private volatile int fallbackSlot = -1;
 
     private final InputManager inputManager;
     private final InputManager.InputDeviceListener inputDeviceListener;
@@ -114,6 +113,11 @@ public class WinHandler {
     private final GamepadState gyroScratchState = new GamepadState();
     private boolean gyroTriggerHeld = false;
 
+    private static final String TAG = "WinHandler";
+    private long lastGyroLogMs = 0;
+    private int lastOscDecision = Integer.MIN_VALUE; // -1 no profile, 0 profile without virtual pad, 1 virtual pad active
+
+
     public void setGyroSensitivityX(float sensitivity) {
         this.gyroSensitivityX = sensitivity;
     }
@@ -141,8 +145,7 @@ public class WinHandler {
 
     public void updateGyroData(float rawGyroX, float rawGyroY) {
         if (!isGyroActive) return;
-        Log.d("Gyro", "raw=" + rawGyroX + "," + rawGyroY + " dz=" + gyroDeadzone
-                + " sens=" + gyroSensitivityX + "," + gyroSensitivityY + " smooth=" + smoothingFactor);
+        final float inX = rawGyroX, inY = rawGyroY;
 
         // Apply deadzone
         if (Math.abs(rawGyroX) < gyroDeadzone) rawGyroX = 0;
@@ -165,8 +168,20 @@ public class WinHandler {
         smoothGyroX = Mathf.clamp(smoothGyroX, -0.25f, 0.25f); // Reduce clamping range for less movement
         smoothGyroY = Mathf.clamp(smoothGyroY, -0.25f, 0.25f);
 
+        gyroX = smoothGyroX;
+        gyroY = smoothGyroY;
+
         gyroOffsetX = Mathf.clamp(gyroOffsetX + gyroX, -1.0f, 1.0f);
         gyroOffsetY = Mathf.clamp(gyroOffsetY + gyroY, -1.0f, 1.0f);
+
+        if (InputDebug.VERBOSE) {
+            long now = SystemClock.uptimeMillis();
+            if (now - lastGyroLogMs >= 1000) { // The sensor runs at about 50 Hz
+                lastGyroLogMs = now;
+                Log.d("Gyro", "in=" + inX + "," + inY + " out=" + gyroX + "," + gyroY
+                        + " off=" + gyroOffsetX + "," + gyroOffsetY + " slot=" + getGyroSlot());
+            }
+        }
 
         resendGyroTarget();
     }
@@ -180,12 +195,14 @@ public class WinHandler {
         setInvertGyroX(preferences.getBoolean("invert_gyro_x", false));
         setInvertGyroY(preferences.getBoolean("invert_gyro_y", false));
         setGyroDeadzone(preferences.getFloat("gyro_deadzone", 0.05f));
-        Log.d("Gyro", "settings: trigger=" + gyroTriggerButton + " toggle=" + isToggleMode + " deadzone=" + gyroDeadzone);
+
+        Log.d("Gyro", "settings: trigger=" + gyroTriggerButton + " toggle=" + isToggleMode
+                + " sens=" + gyroSensitivityX + "," + gyroSensitivityY + " smooth=" + smoothingFactor
+                + " deadzone=" + gyroDeadzone + " invert=" + invertGyroX + "," + invertGyroY);
     }
 
     private void onGyroTriggerChanged(boolean pressed) {
         if (pressed == gyroTriggerHeld) return; // Only react to edges (needed for toggle mode)
-        Log.d("Gyro", "activator pressed=" + pressed + " active=" + isGyroActive);
         gyroTriggerHeld = pressed;
 
         if (isToggleMode) {
@@ -229,16 +246,9 @@ public class WinHandler {
     }
 
     private void writeState(int slot, GamepadState state) {
-        Log.d("Gyro", "writeState slot=" + slot + " off=" + gyroOffsetX + "," + gyroOffsetY);
         FakeInputWriter writer = writers[slot];
         if (writer == null) return;
 
-        /*if ((gyroX != 0f || gyroY != 0f) && slot == getGyroSlot()) {
-            gyroScratchState.copy(state);
-            gyroScratchState.thumbRX = Mathf.clamp(state.thumbRX + gyroX, -1.0f, 1.0f);
-            gyroScratchState.thumbRY = Mathf.clamp(state.thumbRY + gyroY, -1.0f, 1.0f);
-            writer.writeGamepadState(gyroScratchState);
-        }*/
         if ((gyroOffsetX != 0f || gyroOffsetY != 0f) && slot == getGyroSlot()) {
             gyroScratchState.copy(state);
             gyroScratchState.thumbRX = Mathf.clamp(state.thumbRX + gyroOffsetX, -1.0f, 1.0f);
@@ -252,7 +262,6 @@ public class WinHandler {
     // Re-writes the current state of the gyro target so the new offset is applied
     private void resendGyroTarget() {
         int slot = getGyroSlot();
-        Log.d("Gyro", "resend slot=" + slot + " map=" + deviceToSlot);
         if (slot < 0) return;
 
         for (Map.Entry<Integer, Integer> entry : deviceToSlot.entrySet()) {
@@ -505,7 +514,7 @@ public class WinHandler {
         Executors.newSingleThreadExecutor().execute(() -> {
             try {
                 vibrationServer = new LocalServerSocket("winlator_vibration");
-                Log.d("WinHandler", "Vibration listener started on abstract socket: winlator_vibration");
+                Log.d(TAG, "Vibration listener started on abstract socket: winlator_vibration");
 
                 while (vibrationRunning) {
                     LocalSocket client = vibrationServer.accept();
@@ -522,12 +531,12 @@ public class WinHandler {
                         }
                         client.close();
                     } catch (IOException e) {
-                        Log.e("WinHandler", "Vibration client error: " + e.getMessage());
+                        Log.e(TAG, "Vibration client error: " + e.getMessage());
                     }
                 }
             } catch (IOException e) {
                 if (vibrationRunning) {
-                    Log.e("WinHandler", "Vibration listener error: " + e.getMessage());
+                    Log.e(TAG, "Vibration listener error: " + e.getMessage());
                 }
             }
         });
@@ -760,18 +769,15 @@ public class WinHandler {
 
         final ControlsProfile profile = activity.getInputControlsView().getProfile();
 
-        Log.d("WinHandler", "sendGamepadState: profile=" + (profile != null ? profile.getName() : "null")
-                + " virtual=" + (profile != null && profile.isVirtualGamepad())
-                + " showOsc=" + activity.getInputControlsView().isShowTouchscreenControls()
-                + " xinputDisabled=" + xinputDisabled);
-
         if (profile == null) {
+            logOscDecision(-1, null, false);
             releaseSlot(OSC_DEVICE_ID);
             return;
         }
 
-        final boolean useVirtualGamepad = profile.isVirtualGamepad()
-                && activity.getInputControlsView().isShowTouchscreenControls();
+        final boolean showOsc = activity.getInputControlsView().isShowTouchscreenControls();
+        final boolean useVirtualGamepad = profile.isVirtualGamepad() && showOsc;
+        logOscDecision(useVirtualGamepad ? 1 : 0, profile, showOsc);
 
         if (useVirtualGamepad) {
             int slot = assignSlot(OSC_DEVICE_ID);
@@ -811,12 +817,14 @@ public class WinHandler {
                 if (fakeInputBasePath != null && writers[slot] == null) {
                     writers[slot] = new FakeInputWriter(fakeInputBasePath, slot);
                     writers[slot].open();
-                    Log.d("WinHandler", "Assigned device " + deviceId + " to slot " + slot);
+                } else if (fakeInputBasePath == null) {
+                    Log.w(TAG, "FakeInput base path not set: input for device " + deviceId + " will be dropped");
                 }
+                Log.d(TAG, "Assigned device " + deviceId + " to slot " + slot);
                 return slot;
             }
         }
-        Log.w("WinHandler", "No slots available for device " + deviceId);
+        Log.w(TAG, "No slots available for device " + deviceId);
         return -1;
     }
 
@@ -831,20 +839,20 @@ public class WinHandler {
             usedSlots.remove(slot);
             ExternalController removed = controllers.remove(deviceId);
             if (removed != null) removed.unregisterListener();
-            Log.d("WinHandler", "Device " + deviceId + " disconnected (or OSC disabled). Slot released: " + slot);
+            Log.d(TAG, "Device " + deviceId + " disconnected (or OSC disabled). Slot released: " + slot);
         }
     }
 
     public void setXInputDisabled(boolean disabled) {
         this.xinputDisabled = disabled;
         this.xinputDisabledInitialized = true; // Mark as initialized
-        Log.d("WinHandler", "XInput Disabled set to: " + xinputDisabled);
+        Log.d(TAG, "XInput Disabled set to: " + xinputDisabled);
     }
 
     public void setFakeInputPath(String fakeInputPath) {
         if (fakeInputPath != null && !fakeInputPath.isEmpty()) {
             this.fakeInputBasePath = fakeInputPath;
-            Log.d("WinHandler", "FakeInputWriter base path set: " + fakeInputPath);
+            Log.d(TAG, "FakeInputWriter base path set: " + fakeInputPath);
             startVibrationListener();
         }
     }
@@ -885,7 +893,10 @@ public class WinHandler {
         if (controller != null) {
             controller.setTriggerType((byte) preferences.getInt("trigger_type", TRIGGER_IS_AXIS));
             controller.setContext(activity); // Loads deadzone, sensitivity and invert prefs
-        }
+            Log.i(TAG, "Controller registered: deviceId=" + deviceId
+                    + " name=" + controller.getName() + " triggerType=" + controller.getTriggerType());
+        } else
+            Log.d(TAG, "Device " + deviceId + " is not a game controller (cached)");
         controllers.put(deviceId, controller);
         return controller;
     }
@@ -960,6 +971,14 @@ public class WinHandler {
             controller.setContext(activity); // Reloads deadzone, sensitivity and inversion prefs
         }
         loadGyroSettings();
+    }
+
+    private void logOscDecision(int decision, ControlsProfile profile, boolean showOsc) {
+        if (decision == lastOscDecision) return;
+        lastOscDecision = decision;
+        Log.i(TAG, "On-screen gamepad " + (decision == 1 ? "enabled" : "disabled")
+                + ": profile=" + (profile != null ? profile.getName() : "none")
+                + " virtual=" + (profile != null && profile.isVirtualGamepad()) + " showOsc=" + showOsc);
     }
 
 
